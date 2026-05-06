@@ -641,4 +641,7 @@ if __name__ == '__main__':
     print("")
     print("Starting server on http://localhost:5000")
     
-    app.run(debug=True, port=5000, host='0.0.0.0')
+    # Use PORT environment variable for deployment, fallback to 5000 for local
+    import os
+    port = int(os.environ.get('PORT', 5000))
+    app.run(debug=False, port=port, host='0.0.0.0')
