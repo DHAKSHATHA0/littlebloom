@@ -1,0 +1,22 @@
+Terminal 1:
+Database:
+cd little-bloom-app 
+ psql -U postgres 
+\c littlebloom
+Terminal 2:
+cd little-bloom-app
+cd analytics-server  
+pip install -r requirements.txt 
+py -3.11 -m venv venv 
+.\venv\Scripts\Activate.ps1  
+python app.py  
+
+Terminal 3:
+cd little-bloom-app
+cd backend  
+&"C:\Users\DHAKSHATHA SELVARAJ\OneDrive\Documents\apache-maven-3.9.14-bin\apache-maven-3.9.14\bin\mvn.cmd" spring-boot:run
+
+Terminal 4:
+cd little-bloom-app
+cd frontend
+npm start
