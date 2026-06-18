@@ -1,0 +1,54 @@
+Little bloom website -->> commands for start this website:
+
+Terminal 1:
+
+open  docker deskstop
+
+cd  little-bloom
+
+docker start littlebloom-db
+
+docker run -d --name littlebloom-db -e POSTGRES_DB=littlebloom -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:15
+
+docker ps
+
+Terminal 2:
+
+cd  little-bloom
+cd backend
+$env:JAVA_HOME="C:\Program Files\Eclipse Adoptium\jdk-17.0.18.8-hotspot"
+$env:Path="$env:JAVA_HOME\bin;$env:Path"
+java -version
+javac -version
+.\apache-maven-3.9.13-bin\apache-maven-3.9.13\bin\mvn clean install -DskipTests
+ 
+
+Terminal 3:
+cd little-bloom
+
+pip install -r requirements.txt
+
+python analytics.py
+
+Terminal 4:
+
+cd little-bloom
+cd frontend
+npm install
+npm run dev
+
+-->start  again
+
+Terminal 1
+
+docker start littlebloom-db (or)docker compose up
+
+Terminal 2
+
+cd backend
+mvn spring-boot:run
+
+Terminal 3
+
+cd frontend
+npm run dev
