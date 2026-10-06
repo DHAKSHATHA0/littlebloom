@@ -1,3 +1,0 @@
-@echo off
-echo Starting Chrome in dev mode...
-start chrome --disable-web-security --user-data-dir="c:\temp\chrome-dev" --allow-running-insecure-content --disable-features=VizDisplayCompositor http://localhost:3000

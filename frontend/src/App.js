@@ -21,6 +21,7 @@ import ProfilePage from './pages/ProfilePage';
 import SellerDashboard from './pages/SellerDashboard';
 import SellerProducts from './pages/SellerProducts';
 import SellerOrders from './pages/SellerOrdersPage';
+import AdvancedAnalyticsPage from './pages/AdvancedAnalyticsPage';
 
 // Components
 import Header from './components/Header';
@@ -207,6 +208,14 @@ function App() {
             element={
               <SellerRoute>
                 <SellerOrders />
+              </SellerRoute>
+            }
+          />
+          <Route
+            path="/seller/analytics"
+            element={
+              <SellerRoute>
+                <AdvancedAnalyticsPage />
               </SellerRoute>
             }
           />

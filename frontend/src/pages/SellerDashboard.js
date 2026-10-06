@@ -341,8 +341,31 @@ export default function SellerDashboard() {
 
 
 
-          {/* Add Product Button */}
-          <div className="add-product-section">
+          {/* Action Buttons Section */}
+          <div className="add-product-section" style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <button 
+              className="advanced-analytics-btn"
+              style={{
+                background: 'linear-gradient(135deg, #0F172A 0%, #334155 100%)',
+                color: 'white',
+                border: 'none',
+                padding: '16px 36px',
+                borderRadius: '50px',
+                fontSize: '16px',
+                fontWeight: '700',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                boxShadow: '0 6px 20px rgba(15, 23, 42, 0.25)',
+                transition: 'all 0.3s ease'
+              }}
+              onClick={() => navigate('/seller/analytics')}
+            >
+              <span>📊</span>
+              Advanced Analytics (Power BI)
+            </button>
+
             <button 
               className="add-product-btn"
               onClick={() => navigate('/seller/products')}

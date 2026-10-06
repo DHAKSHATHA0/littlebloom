@@ -1,139 +1,209 @@
 package com.littlebloom.controller;
 
-import com.littlebloom.security.CustomUserDetails;
-import com.littlebloom.service.SalesAnalyticsService;
-import com.littlebloom.service.SalesAnalyticsService.*;
+import com.littlebloom.dto.DashboardDataDTO;
+import com.littlebloom.dto.DashboardDataDTO.ChartDataDTO;
+import com.littlebloom.dto.DashboardDataDTO.SummaryDTO;
+import com.littlebloom.model.OrderItem;
+import com.littlebloom.model.User;
+import com.littlebloom.repository.OrderItemRepository;
+import com.littlebloom.repository.UserRepository;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.YearMonth;
+import java.time.temporal.ChronoUnit;
+import java.time.temporal.WeekFields;
+import java.util.*;
+import java.util.stream.Collectors;
 
-@RestController
-@RequestMapping("/analytics")
-@CrossOrigin(origins = "http://localhost:3000")
+// @RestController - DISABLED: Using UnifiedAnalyticsController instead
+// @RequestMapping("/api/analytics")
+@Slf4j
+@CrossOrigin(origins = "*")
 public class AnalyticsController {
 
     @Autowired
-    private SalesAnalyticsService salesAnalyticsService;
+    private OrderItemRepository orderItemRepository;
+
+    @Autowired
+    private UserRepository userRepository;
 
     /**
-     * Get complete seller dashboard with analytics
+     * GET /api/analytics/dashboard?sellerId={id}&year={year}&period={daily|weekly|monthly|yearly}
+     * DISABLED - Use UnifiedAnalyticsController instead
      */
-    @GetMapping("/dashboard")
-    public ResponseEntity<SellerDashboardDTO> getDashboard(Authentication authentication) {
-        if (authentication == null) {
-            return ResponseEntity.status(401).build();
-        }
+    // @GetMapping("/dashboard")
+    public ResponseEntity<?> getDashboard_DISABLED(
+            @RequestParam Long sellerId,
+            @RequestParam(defaultValue = "2024") int year,
+            @RequestParam(defaultValue = "monthly") String period) {
+        try {
+            log.info("Dashboard request: sellerId={}, year={}, period={}", sellerId, year, period);
 
-        CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
-        SellerDashboardDTO dashboard = salesAnalyticsService.getSellerDashboard(userDetails.getUserId());
-        return ResponseEntity.ok(dashboard);
+            User seller = userRepository.findById(sellerId)
+                    .orElseThrow(() -> new RuntimeException("Seller not found"));
+
+            List<OrderItem> allItems = orderItemRepository.findBySellerOrderByCreatedAtDesc(seller);
+            List<OrderItem> yearItems = allItems.stream()
+                    .filter(item -> item.getCreatedAt().getYear() == year)
+                    .collect(Collectors.toList());
+
+            BigDecimal totalRevenue = yearItems.stream()
+                    .map(item -> item.getPrice().multiply(new BigDecimal(item.getQuantity())))
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+            long totalOrders = yearItems.stream()
+                    .map(item -> item.getOrder().getId())
+                    .distinct()
+                    .count();
+
+            double avgOrderValue = totalOrders > 0 ? 
+                    totalRevenue.doubleValue() / totalOrders : 0;
+
+            List<ChartDataDTO> chartData = getChartDataByPeriod(yearItems, period, year);
+
+            DashboardDataDTO response = DashboardDataDTO.builder()
+                    .summary(SummaryDTO.builder()
+                            .totalOrders(totalOrders)
+                            .totalRevenue(Math.round(totalRevenue.doubleValue() * 100.0) / 100.0)
+                            .averageOrderValue(Math.round(avgOrderValue * 100.0) / 100.0)
+                            .period(period)
+                            .year(year)
+                            .build())
+                    .chartData(chartData)
+                    .tableData(chartData)
+                    .build();
+
+            log.info("Dashboard response: {} orders, {} revenue", totalOrders, totalRevenue);
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            log.error("Error fetching dashboard data", e);
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
     }
 
-    /**
-     * Get sales for last 30 days
-     */
-    @GetMapping("/sales/last-30-days")
-    public ResponseEntity<SalesPeriodDTO> getSalesLast30Days(Authentication authentication) {
-        if (authentication == null) {
-            return ResponseEntity.status(401).build();
+    private List<ChartDataDTO> getChartDataByPeriod(List<OrderItem> items, String period, int year) {
+        switch (period.toLowerCase()) {
+            case "daily":
+                return getDailyData(items, year);
+            case "weekly":
+                return getWeeklyData(items, year);
+            case "yearly":
+                return getYearlyData(items);
+            default:
+                return getMonthlyData(items, year);
         }
-
-        CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
-        SalesPeriodDTO sales = salesAnalyticsService.getSalesLast30Days(userDetails.getUserId());
-        return ResponseEntity.ok(sales);
     }
 
-    /**
-     * Get sales for this week
-     */
-    @GetMapping("/sales/week")
-    public ResponseEntity<SalesPeriodDTO> getSalesThisWeek(Authentication authentication) {
-        if (authentication == null) {
-            return ResponseEntity.status(401).build();
+    private List<ChartDataDTO> getDailyData(List<OrderItem> items, int year) {
+        LocalDate now = LocalDate.now();
+        LocalDate firstDay = now.withDayOfMonth(1);
+        LocalDate lastDay = now.withDayOfMonth(now.lengthOfMonth());
+
+        Map<Integer, ChartDataDTO> dailyMap = new TreeMap<>();
+        for (int day = 1; day <= lastDay.getDayOfMonth(); day++) {
+            dailyMap.put(day, ChartDataDTO.builder()
+                    .label("Day " + day)
+                    .orders(0)
+                    .revenue(0.0)
+                    .build());
         }
 
-        CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
-        SalesPeriodDTO sales = salesAnalyticsService.getSalesThisWeek(userDetails.getUserId());
-        return ResponseEntity.ok(sales);
+        items.forEach(item -> {
+            LocalDate itemDate = item.getCreatedAt().toLocalDate();
+            if (itemDate.getMonthValue() == now.getMonthValue() && itemDate.getYear() == year) {
+                int day = itemDate.getDayOfMonth();
+                ChartDataDTO data = dailyMap.get(day);
+                if (data != null) {
+                    data.setOrders(data.getOrders() + 1);
+                    data.setRevenue(data.getRevenue() + item.getPrice().doubleValue() * item.getQuantity());
+                }
+            }
+        });
+
+        return new ArrayList<>(dailyMap.values());
     }
 
-    /**
-     * Get sales for this month
-     */
-    @GetMapping("/sales/month")
-    public ResponseEntity<SalesPeriodDTO> getSalesThisMonth(Authentication authentication) {
-        if (authentication == null) {
-            return ResponseEntity.status(401).build();
+    private List<ChartDataDTO> getWeeklyData(List<OrderItem> items, int year) {
+        Map<Integer, ChartDataDTO> weeklyMap = new TreeMap<>();
+        WeekFields weekFields = WeekFields.of(Locale.getDefault());
+
+        items.forEach(item -> {
+            LocalDate itemDate = item.getCreatedAt().toLocalDate();
+            if (itemDate.getYear() == year) {
+                int week = itemDate.get(weekFields.weekOfYear());
+                weeklyMap.putIfAbsent(week, ChartDataDTO.builder()
+                        .label("Week " + week)
+                        .orders(0)
+                        .revenue(0.0)
+                        .build());
+
+                ChartDataDTO data = weeklyMap.get(week);
+                data.setOrders(data.getOrders() + 1);
+                data.setRevenue(data.getRevenue() + item.getPrice().doubleValue() * item.getQuantity());
+            }
+        });
+
+        return new ArrayList<>(weeklyMap.values());
+    }
+
+    private List<ChartDataDTO> getMonthlyData(List<OrderItem> items, int year) {
+        String[] months = {"January", "February", "March", "April", "May", "June",
+                          "July", "August", "September", "October", "November", "December"};
+        Map<Integer, ChartDataDTO> monthlyMap = new TreeMap<>();
+
+        for (int month = 1; month <= 12; month++) {
+            monthlyMap.put(month, ChartDataDTO.builder()
+                    .label(months[month - 1])
+                    .orders(0)
+                    .revenue(0.0)
+                    .build());
         }
 
-        CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
-        SalesPeriodDTO sales = salesAnalyticsService.getSalesThisMonth(userDetails.getUserId());
-        return ResponseEntity.ok(sales);
+        items.forEach(item -> {
+            LocalDate itemDate = item.getCreatedAt().toLocalDate();
+            if (itemDate.getYear() == year) {
+                int month = itemDate.getMonthValue();
+                ChartDataDTO data = monthlyMap.get(month);
+                if (data != null) {
+                    data.setOrders(data.getOrders() + 1);
+                    data.setRevenue(data.getRevenue() + item.getPrice().doubleValue() * item.getQuantity());
+                }
+            }
+        });
+
+        return new ArrayList<>(monthlyMap.values());
     }
 
-    /**
-     * Get daily sales chart for visualization
-     */
-    @GetMapping("/sales/daily")
-    public ResponseEntity<List<DailySalesDTO>> getDailySalesChart(
-            Authentication authentication,
-            @RequestParam(defaultValue = "7") int days) {
-        if (authentication == null) {
-            return ResponseEntity.status(401).build();
+    private List<ChartDataDTO> getYearlyData(List<OrderItem> items) {
+        int currentYear = LocalDate.now().getYear();
+        Map<Integer, ChartDataDTO> yearlyMap = new TreeMap<>();
+
+        for (int y = currentYear - 4; y <= currentYear; y++) {
+            yearlyMap.put(y, ChartDataDTO.builder()
+                    .label(String.valueOf(y))
+                    .orders(0)
+                    .revenue(0.0)
+                    .build());
         }
 
-        CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
-        List<DailySalesDTO> dailySales = salesAnalyticsService.getDailySalesChart(userDetails.getUserId(), days);
-        return ResponseEntity.ok(dailySales);
+        items.forEach(item -> {
+            int itemYear = item.getCreatedAt().getYear();
+            if (yearlyMap.containsKey(itemYear)) {
+                ChartDataDTO data = yearlyMap.get(itemYear);
+                data.setOrders(data.getOrders() + 1);
+                data.setRevenue(data.getRevenue() + item.getPrice().doubleValue() * item.getQuantity());
+            }
+        });
+
+        return new ArrayList<>(yearlyMap.values());
     }
-
-    /**
-     * DATA SCIENCE: Predict next month sales using Linear Regression
-     * 
-     * Returns:
-     * - Predicted Revenue: Forecasted revenue for next month
-     * - Predicted Orders: Forecasted number of orders
-     * - Confidence: R-squared value (0-1) indicating model accuracy
-     * - Trend: Growth/Decline indicator
-     * - Slope: Rate of change in sales
-     */
-    @GetMapping("/prediction/next-month")
-    public ResponseEntity<SalesPredictionDTO> predictNextMonthSales(Authentication authentication) {
-        if (authentication == null) {
-            return ResponseEntity.status(401).build();
-        }
-
-        CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
-        SalesPredictionDTO prediction = salesAnalyticsService.predictNextMonthSales(userDetails.getUserId());
-        return ResponseEntity.ok(prediction);
-    }
-
-    /**
-     * DATA SCIENCE: Trend analysis with moving average and volatility
-     * 
-     * Uses:
-     * - Moving Average: Smooth out daily fluctuations (7-day window)
-     * - Volatility: Standard deviation showing price/revenue variation
-     * - Actual Revenue: Real daily sales data
-     */
-    @GetMapping("/trend-analysis")
-    public ResponseEntity<List<TrendAnalysisDTO>> getTrendAnalysis(
-            Authentication authentication,
-            @RequestParam(defaultValue = "7") int windowSize) {
-        if (authentication == null) {
-            return ResponseEntity.status(401).build();
-        }
-
-        CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
-        List<TrendAnalysisDTO> trendAnalysis = salesAnalyticsService.getTrendAnalysis(
-                userDetails.getUserId(), 
-                windowSize
-        );
-        return ResponseEntity.ok(trendAnalysis);
-    }
-
-    
 }
